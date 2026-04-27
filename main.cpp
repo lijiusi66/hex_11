@@ -16,6 +16,7 @@ int main()
 #ifndef _BOTZONE_ONLINE
 	freopen("in.txt", "r", stdin);
 #endif // !_BOTZONE_ONLINE
+<<<<<<< HEAD
 
 	int x, y, n;
 	//恢复目前的棋盘信息
@@ -33,6 +34,21 @@ int main()
 
 
 	// 向平台输出决策结果
+=======
+	int n;
+	cin>>n;
+	if(!hex.loadFromInput(n))cout << 1 << ' ' << 2 << endl;
+	else{
+		if(n<=5){
+			
+		}else{
+
+		}
+	}
+	int new_x,new_y;
+	// 向平台输出决策结果
+
+>>>>>>> ff6a46c (init)
 	cout << new_x << ' ' << new_y << endl;
 	return 0;
 }
