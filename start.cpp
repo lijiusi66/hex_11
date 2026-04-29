@@ -1,11 +1,3 @@
-<<<<<<< HEAD
-#include"hex_state.h"
-class first{
-    private:
-    public:
-    
-};
-=======
 #include "hex_state.h"
 #include"start.h"
 #include <vector>
@@ -63,4 +55,3 @@ vector<Move> start_first::getCandidates() {
 
         return {scored[idx].x, scored[idx].y};
     }
->>>>>>> ff6a46c (init)
