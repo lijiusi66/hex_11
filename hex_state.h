@@ -12,23 +12,6 @@ struct Move {
 
 class HexState {
 public:
-<<<<<<< HEAD
-    int board[SIZE][SIZE];
-
-    HexState();
-
-    // 初始化棋盘
-    inline void init();
-
-    // 从输入恢复棋盘
-    inline void loadFromInput();
-
-    // 判断是否合法
-    inline bool in_board(int x, int y) const;
-
-    // 落子
-    bool place(int x, int y, int player);
-=======
     int board[SIZE+2][SIZE+2];
 
     HexState() {
@@ -123,7 +106,6 @@ public:
         }
         return false;
     }
->>>>>>> ff6a46c (init)
 };
 
 #endif
