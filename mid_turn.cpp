@@ -1,4 +1,3 @@
-
 class double_bridge{
     
 

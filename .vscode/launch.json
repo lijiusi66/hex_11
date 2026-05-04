@@ -9,6 +9,14 @@
       "args": [],
       "cwd": "${fileDirname}",
       "preLaunchTask": "g++ build"
+    },
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/a21196/hex_11",
+      "program": "/Users/a21196/hex_11/build/Debug/outDebug"
     }
   ]
 }
