@@ -5,14 +5,58 @@
 using namespace std;
 
 const int SIZE = 11;
+const int TOTAL_CELLS = SIZE * SIZE;
+
+// 虚拟节点ID
+const int VIRTUAL_LEFT = TOTAL_CELLS;    // 玩家1的左边界
+const int VIRTUAL_RIGHT = TOTAL_CELLS + 1;  // 玩家1的右边界
+const int VIRTUAL_TOP = TOTAL_CELLS;     // 玩家-1的上边界
+const int VIRTUAL_BOTTOM = TOTAL_CELLS + 1; // 玩家-1的下边界
 
 struct Move {
     int x, y;
 };
 
+// 并查集类
+class UnionFind {
+private:
+    int parent[TOTAL_CELLS + 2];  // +2 用于两个虚拟节点
+    int rank_[TOTAL_CELLS + 2];
+    
+public:
+    void init() {
+        for (int i = 0; i < TOTAL_CELLS + 2; i++) {
+            parent[i] = i;
+            rank_[i] = 0;
+        }
+    }
+    
+    int find(int x) {
+        if (parent[x] != x) {
+            parent[x] = find(parent[x]);  // 路径压缩
+        }
+        return parent[x];
+    }
+    
+    void unite(int x, int y) {
+        int px = find(x), py = find(y);
+        if (px == py) return;
+        // 按秩合并
+        if (rank_[px] < rank_[py]) swap(px, py);
+        parent[py] = px;
+        if (rank_[px] == rank_[py]) rank_[px]++;
+    }
+    
+    bool connected(int x, int y) {
+        return find(x) == find(y);
+    }
+};
+
 class HexState {
 public:
     int board[SIZE+2][SIZE+2];
+    UnionFind uf[2];  // 0: 玩家1, 1: 玩家-1
+    bool uf_initialized[2];
 
     HexState() {
         init();
@@ -28,10 +72,33 @@ public:
                     board[i][j] = 0; // 空
             }
         }
+        uf_initialized[0] = false;
+        uf_initialized[1] = false;
     }
+    
+    // 坐标转ID
+    inline int pos2id(int x, int y) const {
+        return (x - 1) * SIZE + (y - 1);
+    }
+    
+    // ID转坐标
+    inline void id2pos(int id, int &x, int &y) const {
+        x = id / SIZE + 1;
+        y = id % SIZE + 1;
+    }
+    
+    // 初始化并查集（用于胜负判断）
+    void initUnionFind(int player);
+    
+    // 检查玩家是否获胜
+    bool checkWin(int player);
+    
+    // 放置棋子并更新并查集
+    bool placeAndUpdate(int x, int y, int player);
+    
     inline bool loadFromInput(int n);
     inline bool in_board(int x, int y) const {
-        return x >= 1 && x <= SIZE && y >= 1 && y <= SIZE;
+        return board[x][y] != 2;
     }
 
     bool place(int x, int y, int player) {
