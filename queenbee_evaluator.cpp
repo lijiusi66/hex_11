@@ -26,8 +26,8 @@ bool QueenbeeEvaluator::isBoundary(int x, int y, int player) const {
 
 void QueenbeeEvaluator::computeDistances(int player, int resA[SIZE+2][SIZE+2], int resB[SIZE+2][SIZE+2]) {
     const int INF = std::numeric_limits<int>::max() / 4;
-    static const int dx[6] = {1, 1, 0, -1, -1, 0};
-    static const int dy[6] = {0, 1, 1, 0, -1, -1};
+    static const int dx[6] = {-1, -1, 0, 0, 1, 1};
+    static const int dy[6] = {0, 1, -1, 1, -1, 0};
 
     for (int i = 1; i <= size; i++) {
         for (int j = 1; j <= size; j++) {
