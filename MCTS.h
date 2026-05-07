@@ -53,12 +53,11 @@ private:
 
 public:
 
-    MCTS(HexState* state, int player){
-    };
+    MCTS(HexState* state, int player);
 
     ~MCTS();
 
-    Move search(int iterations);
+    Move search(double iterations);
 
 private:
 

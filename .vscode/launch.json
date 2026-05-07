@@ -5,7 +5,7 @@
       "name": "C++ Debug (Multi-File)",
       "type": "lldb",
       "request": "launch",
-      "program": "${fileDirname}/build/outDebug",
+      "program": "${fileDirname}/run/outDebug",
       "args": [],
       "cwd": "${fileDirname}",
       "preLaunchTask": "build-all",

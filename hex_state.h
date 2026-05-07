@@ -58,9 +58,7 @@ public:
     UnionFind uf[2];  // 0: 玩家1, 1: 玩家-1
     bool uf_initialized[2];
 
-    HexState() {
-        init();
-    }
+    HexState(){ init(); }
 
     // 初始化棋盘（边界=2）
     inline void init() {
@@ -96,12 +94,12 @@ public:
     // 放置棋子并更新并查集
     bool placeAndUpdate(int x, int y, int player);
     
-    inline bool loadFromInput(int n);
+    bool loadFromInput(int n);
     inline bool in_board(int x, int y) const {
         return board[x][y] != 2;
     }
 
-    bool place(int x, int y, int player) {
+    inline bool place(int x, int y, int player) {
         if (!in_board(x,y) || board[x][y] != 0) return false;
         board[x][y] = player;
         return true;
@@ -133,7 +131,7 @@ public:
     }
 
     // Hex经典：双桥结构检测
-    bool double_bridge(int x, int y) {
+    bool double_bridge_fuzzy(int x, int y) {
         /*
             桥结构：
             (x,y) 放下后，如果存在：
@@ -144,16 +142,22 @@ public:
             两个点形成“不可同时封堵”的连接
         */
         
-        int cnt = 0;
+        for(int i=0;i<num_of_near;i++){
+            int nx = x + dx2[i];
+            int ny = y + dy2[i];
+            if (nx>=0&&nx<=SIZE+1&&ny>=0&&ny<=SIZE+1&&(hex_board->board[nx][ny] == 1 ||hex_board->board[nx][ny] == -1))return true;
+        }
+        return false;
+    }
+    bool double_bridge(int x, int y,int player){
         for(int i=0;i<num_of_near;i++){
             int nx = x + dx2[i];
             int ny = y + dy2[i];
             if ((hex_board->board[nx][ny] == 1 ||
-                hex_board->board[nx][ny] == -1))return true;
+                hex_board->board[nx][ny] == -1)&&hex_board->board[x+dx[i]][y+dy[i]]!=!player&&hex_board->board[x+dx[(i+1)%num_of_near]][y+dy[(i+1)%num_of_near]]!=!player)return true;
         }
         return false;
     }
-
     // 是否靠近已有结构（用于剪枝/MCTS）
     bool near_any(int x, int y) {
         for (int i = 0; i < num_of_near; i++) {

@@ -271,7 +271,7 @@ vector<Move> MCTS::generateMoves(HexState& state)
                 continue;
             }
 
-            if (helper.near_any(i,j)||helper.double_bridge(i,j))
+            if (helper.near_any(i,j)||helper.double_bridge_fuzzy(i,j))
             {
                 moves.push_back({i,j});
             }
@@ -282,7 +282,7 @@ vector<Move> MCTS::generateMoves(HexState& state)
 }
 
 // search
-Move MCTS::search(int time_limit_sec)
+Move MCTS::search(double time_limit_sec)
 {
     clock_t start_time = clock();
     clock_t limit =

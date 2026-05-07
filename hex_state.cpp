@@ -1,30 +1,5 @@
 #include"hex_state.h"
 #include<iostream>
-HexState::HexState() { init(); }
-
-void HexState::init() { 
-	memset(board, 0, sizeof(board)); 
-	for (int i = 0; i < 13; i++) {
-    board[0][i] = 2;        // 上边
-    board[12][i] = 2;       // 下边
-    board[i][0] = 2;       // 左边
-    board[i][12] = 2;		// 右边
-}     
-}
-
-bool HexState::in_board(int x, int y) const {
-  return board[x][y] != 2;
-}
-
-bool HexState::place(int x, int y, int player) {
-  if (!in_board(x, y))
-    return false;
-  if (board[x][y] != 0)
-    return false;
-  board[x][y] = player;
-  return true;
-}
-
 // 六个方向的偏移量
 const int DX[6] = {-1, -1, 0, 0, 1, 1};
 const int DY[6] = {0, 1, -1, 1, -1, 0};
