@@ -106,6 +106,8 @@ public:
         board[x][y] = player;
         return true;
     }
+    HexState(const HexState& other);
+    HexState& operator=(const HexState& other);
 };
 
 class near {
