@@ -12,9 +12,9 @@ int main() {
     
     HexState hex; 
     
-//#ifndef _BOTZONE_ONLINE
+#ifndef _BOTZONE_ONLINE
     freopen("in.txt", "r", stdin);
-//#endif
+#endif
     
     int n;
     cin >> n;
