@@ -224,20 +224,16 @@ void MCTS::backpropagate(Node* node,
     while (node != nullptr)
     {
         node->visits++;
-
         if (node->player == winner)
         {
             node->wins += 1.0;
         }
-
         node = node->parent;
     }
 }
 
 // generate moves
-vector<Move> MCTS::generateMoves(
-    HexState& state
-)
+vector<Move> MCTS::generateMoves(HexState& state)
 {
     vector<Move> moves;
 
@@ -275,7 +271,7 @@ vector<Move> MCTS::generateMoves(
                 continue;
             }
 
-            if (helper.near_any(i,j))
+            if (helper.near_any(i,j)||helper.double_bridge(i,j))
             {
                 moves.push_back({i,j});
             }
@@ -286,9 +282,13 @@ vector<Move> MCTS::generateMoves(
 }
 
 // search
-Move MCTS::search(int iterations)
+Move MCTS::search(int time_limit_sec)
 {
-    for (int iter = 0;
+    clock_t start_time = clock();
+    clock_t limit =
+        start_time +
+        time_limit_sec * CLOCKS_PER_SEC;
+    /*for (int iter = 0;
          iter < iterations;
          iter++)
     {
@@ -315,6 +315,32 @@ Move MCTS::search(int iterations)
         {
             bestVisit = child->visits;
 
+            bestChild = child;
+        }
+    }
+
+    return bestChild->move;*/
+    while (clock() < limit)
+    {
+        Node* node = root;
+
+        node = select(node);
+
+        node = expand(node);
+
+        int winner = simulate(node);
+
+        backpropagate(node, winner);
+    }
+
+    Node* bestChild = nullptr;
+    int bestVisit = -1;
+
+    for (auto child : root->children)
+    {
+        if (child->visits > bestVisit)
+        {
+            bestVisit = child->visits;
             bestChild = child;
         }
     }

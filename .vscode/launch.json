@@ -2,21 +2,14 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "C++ Debug",
+      "name": "C++ Debug (Multi-File)",
       "type": "lldb",
       "request": "launch",
-      "program": "${fileDirname}/${fileBasenameNoExtension}",
+      "program": "${fileDirname}/build/outDebug",
       "args": [],
       "cwd": "${fileDirname}",
-      "preLaunchTask": "g++ build"
-    },
-    {
-      "name": "C/C++ Runner: Debug Session",
-      "type": "lldb",
-      "request": "launch",
-      "args": [],
-      "cwd": "/Users/a21196/hex_11",
-      "program": "/Users/a21196/hex_11/build/Debug/outDebug"
+      "preLaunchTask": "build-all",
+      "stopOnEntry": false
     }
   ]
 }

@@ -12,9 +12,9 @@ int main() {
     
     HexState hex; 
     
-#ifndef _BOTZONE_ONLINE
+//#ifndef _BOTZONE_ONLINE
     freopen("in.txt", "r", stdin);
-#endif
+//#endif
     
     int n;
     cin >> n;
@@ -26,18 +26,8 @@ int main() {
     int current_player = (n % 2 == 1) ? 1 : -1;
     
     MCTS mcts(&hex,current_player);
-    
-    int time_limit_ms;
-    if (n <= 5) {
-        time_limit_ms = 2000;
-    } else if (n <= 15) {
-        time_limit_ms = 3000;
-    } else {
-        time_limit_ms = 4000;
-    }
-    
-    Move best_move = mcts.search(time_limit_ms);
-    
+    int threshold = 0.95 * (double)CLOCKS_PER_SEC; 
+    Move best_move = mcts.search(0.95);
     cout << best_move.x << " " << best_move.y << endl;
     
     return 0;
