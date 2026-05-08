@@ -556,7 +556,7 @@ private:
         if (node == root) nextPlayer = rootPlayer;
 
         Node* child = new Node(node, mv, nextPlayer);
-        child->untriedMoves = generateMoves(child->state);
+        child->untriedMoves = generateMoves(child->state, -nextPlayer);
         node->children.push_back(child);
 
         return child;
@@ -564,11 +564,12 @@ private:
 
     int simulate(Node* node) {
         HexState simState = node->state;
-        vector<Move> moves = generateMoves(simState);
-        random_shuffle(moves.begin(), moves.end());
 
         int currentPlayer = -node->player;
         if (node == root) currentPlayer = rootPlayer;
+
+        vector<Move> moves = generateMoves(simState, currentPlayer);
+        random_shuffle(moves.begin(), moves.end());
 
         int ptr = 0;
         while (true) {
@@ -593,7 +594,7 @@ private:
         }
     }
 
-    vector<Move> generateMoves(HexState& state) {
+    vector<Move> generateMoves(HexState& state, int player) {
         vector<Move> moves;
         bool emptyBoard = true;
         for (int i = 1; i <= SIZE && emptyBoard; i++) {
@@ -614,7 +615,7 @@ private:
         for (int i = 1; i <= SIZE; i++) {
             for (int j = 1; j <= SIZE; j++) {
                 if (state.board[i][j] != 0) continue;
-                if (helper.near_any(i,j) || helper.double_bridge(i,j)) {
+                if (helper.near_any(i,j) || helper.double_bridge(i,j,player)) {
                     moves.push_back({i, j});
                 }
             }
@@ -626,7 +627,7 @@ public:
     MCTS(HexState* state, int player) {
         rootPlayer = player;
         root = new Node(*state);
-        root->untriedMoves = generateMoves(root->state);
+        root->untriedMoves = generateMoves(root->state, rootPlayer);
         srand(time(0));
     }
 
