@@ -1,21 +1,28 @@
 {
-    // 使用 IntelliSense 了解相关属性。 
-    // 悬停以查看现有属性的描述。
-    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "(lldb) 启动",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "输入程序名称，例如 ${workspaceFolder}/a.out",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "lldb"
-        }
-
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    
+    {
+      "name": "Debug Current File (Mac Stable)",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${fileDirname}/${fileBasenameNoExtension}",
+      "args": [],
+      "cwd": "${fileDirname}",
+      "preLaunchTask": "build debug",
+      "console": "integratedTerminal",
+       "initCommands": [
+    "settings set target.process.thread.step-avoid-regexp std::",
+    "settings set target.process.thread.step-avoid-regexp __.*"
+  ]
+    },
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/a21196/Cplus_code_set",
+      "program": "/Users/a21196/Cplus_code_set/build/Debug/outDebug"
+    }
+  ]
 }

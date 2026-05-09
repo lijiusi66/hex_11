@@ -234,7 +234,7 @@ public:
     return cnt >= 1;
   }
 
-  bool near_any(int x, int y) {
+  bool near_any(int x, int y) {//安排的敌我双方都进行考虑
     for (int i = 0; i < 6; i++) {
       int nx = x + dx[i];
       int ny = y + dy[i];
@@ -753,38 +753,37 @@ int main() {
     return 0;
   }
 
-  int current_player = (n % 2 == 1) ? 1 : -1;
+  int current_player = 1;
   int pieces = countPieces(hex);
 
   Move winMove = checkDirectWin(hex, current_player);
-  if (winMove.x != -1) {
-    cout << winMove.x << " " << winMove.y << endl;
+  if (winMove.x >0) {
+    cout << winMove.x-1 << " " << winMove.y-1 << endl;
     return 0;
   }
 
   Move blocking = getBlockingMove(hex, current_player);
-  if (blocking.x != -1) {
-    cout << blocking.x << " " << blocking.y << endl;
+  if (blocking.x >0) {
+    cout << blocking.x-1 << " " << blocking.y-1 << endl;
     return 0;
   }
 
   /*if (pieces <= 2) {
       start_first starter(&hex);
       Move best = starter.getBestMove(current_player);
-      cout << best.x << " " << best.y << endl;
+      cout << best.x-1 << " " << best.y-1 << endl;
       return 0;
   }*/
 
   if (pieces >= 80) {
     MCTS mcts(&hex, current_player);
     Move best = mcts.search(0.9);
-    cout << best.x << " " << best.y << endl;
+    cout << best.x-1 << " " << best.y-1 << endl;
     return 0;
   }
 
   MCTS mcts(&hex, current_player);
-  Move best_move = mcts.search(0.90);
-  cout << best_move.x << " " << best_move.y << endl;
-
+  Move best_move = mcts.search(0.85);
+  cout << best_move.x-1 << " " << best_move.y-1 << endl;
   return 0;
 }
