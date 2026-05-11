@@ -10,7 +10,8 @@
 #include <set>
 #include <vector>
 using namespace std;
-
+int win;//win作为全局，用于判断是否获胜，先手连接上下，后手连接左右
+const int num_of_near=6;
 const int SIZE = 11;
 const int TOTAL_CELLS = SIZE * SIZE;
 
@@ -91,12 +92,14 @@ public:
     return true;
   }
 
-  inline bool loadFromInput(int n) {
+  inline bool loadFromInput(int n,int& current_player) {
     int x, y;
+    current_player=1;
     for (int i = 0; i < n - 1; i++) {
       cin >> x >> y;
       if (x != -1)
         board[x + 1][y + 1] = -1;
+        else current_player=0;
       cin >> x >> y;
       if (x != -1)
         board[x + 1][y + 1] = 1;
@@ -115,7 +118,7 @@ public:
     const int DX[6] = {-1, -1, 0, 0, 1, 1};
     const int DY[6] = {0, 1, -1, 1, -1, 0};
 
-    int idx = (player == 1) ? 0 : 1;
+    int idx = (player == 1) ? win : 1-win;
     uf[idx].init();
     uf_initialized[idx] = true;
 
@@ -150,7 +153,7 @@ public:
   }
 
   bool checkWin(int player) {
-    int idx = (player == 1) ? 0 : 1;
+    int idx = (player == 1) ? win : 1-win;
     if (!uf_initialized[idx]) {
       initUnionFind(player);
     }
@@ -167,8 +170,8 @@ public:
 
     if (!in_board(x, y) || board[x][y] != 0)
       return false;
-    board[x][y] = player;
-    int idx = (player == 1) ? 0 : 1;
+    board[x][y] = player;//就是表示当前落子
+    int idx = (player == 1) ? win:1-win;
     int id = pos2id(x, y);
 
     if (!uf_initialized[idx]) {
@@ -201,50 +204,68 @@ public:
 };
 
 class near {
-private:
-  HexState *hex_board;
-  int dx[6] = {-1, -1, 0, 0, 1, 1};
-  int dy[6] = {0, 1, -1, 1, -1, 0};
-
-public:
-  near(HexState *b) { hex_board = b; }
-
-  bool neighbour_check(int x, int y, int player) {
-    for (int i = 0; i < 6; i++) {
-      int nx = x + dx[i];
-      int ny = y + dy[i];
-      if (hex_board->board[nx][ny] == player)
-        return true;
-    }
-    return false;
-  }
-
-  bool double_bridge(int x, int y, int player) {
-    int cnt = 0;
-    for (int i = 0; i < 6; i++) {
-      int x1 = x + dx[i];
-      int y1 = y + dy[i];
-      int x2 = x + dx[(i + 2) % 6];
-      int y2 = y + dy[(i + 2) % 6];
-      if (hex_board->board[x1][y1] == player &&
-          hex_board->board[x2][y2] == player) {
-        cnt++;
+  private:
+      HexState* hex_board;
+      const int dx[num_of_near] = {0,-1,-1,0,1,1};
+      const int dy[num_of_near] = {-1,0,1,1,0,-1};
+      const int dx2[num_of_near]={-1,-2,-1,1,2,1};
+      const int dy2[num_of_near]={-1,1,2,1,-1,-2};
+  public:
+      near(HexState* b) {
+          hex_board = b;
       }
-    }
-    return cnt >= 1;
-  }
-
-  bool near_any(int x, int y) {//安排的敌我双方都进行考虑
-    for (int i = 0; i < 6; i++) {
-      int nx = x + dx[i];
-      int ny = y + dy[i];
-      if (hex_board->board[nx][ny] == 1 || hex_board->board[nx][ny] == -1)
-        return true;
-    }
-    return false;
-  }
-};
-
+      // 是否有相邻己方棋子
+      bool neighbour_check(int x, int y, int player) {
+          for (int i = 0; i < num_of_near; i++) {
+              int nx = x + dx[i];
+              int ny = y + dy[i];
+              if (hex_board->board[nx][ny] == player)
+                  return true;
+          }
+          return false;
+      }
+  
+      // Hex经典：双桥结构检测
+      bool double_bridge_fuzzy(int x, int y) {
+          /*
+              桥结构：
+              (x,y) 放下后，如果存在：
+              
+              X . 
+               . X
+  
+              两个点形成“不可同时封堵”的连接
+          */
+          
+          for(int i=0;i<num_of_near;i++){
+              int nx = x + dx2[i];
+              int ny = y + dy2[i];
+              if (nx>=0&&nx<=SIZE+1&&ny>=0&&ny<=SIZE+1&&(hex_board->board[nx][ny] == 1 ||hex_board->board[nx][ny] == -1))return true;
+          }
+          return false;
+      }
+      bool double_bridge(int x, int y,int player){
+          for(int i=0;i<num_of_near;i++){
+              int nx = x + dx2[i];
+              int ny = y + dy2[i];
+              if ((hex_board->board[nx][ny] == 1 ||
+                  hex_board->board[nx][ny] == -1)&&hex_board->board[x+dx[i]][y+dy[i]]!=!player&&hex_board->board[x+dx[(i+1)%num_of_near]][y+dy[(i+1)%num_of_near]]!=!player)return true;
+          }
+          return false;
+      }
+      // 是否靠近已有结构（用于剪枝/MCTS）
+      bool near_any(int x, int y) {
+          for (int i = 0; i < num_of_near; i++) {
+              int nx = x + dx[i];
+              int ny = y + dy[i];
+              if (hex_board->board[nx][ny] == 1 ||
+                  hex_board->board[nx][ny] == -1)
+                  return true;
+          }
+          return false;
+      }
+  };
+  
 class start_first {
 public:
   HexState *state;
@@ -318,6 +339,8 @@ private:
 
   inline int playerIndex(int player) { return (player == 1) ? 0 : 1; }
 
+public:
+  /// Shortest-path distances from both sides for `player` (1 = vertical, -1 = horizontal).
   void computeDistances(int player, int resA[SIZE + 2][SIZE + 2],
                         int resB[SIZE + 2][SIZE + 2]) {
     const int INF = INT_MAX / 4;
@@ -393,6 +416,7 @@ private:
     }
   }
 
+private:
   int getQueenbeePotential(int player) {
     int idx = playerIndex(player);
     computeDistances(player, distA[idx], distB[idx]);
@@ -522,8 +546,6 @@ private:
 
   Node *root;
   int rootPlayer;
-  int dx[6] = {-1, -1, 0, 0, 1, 1};
-  int dy[6] = {0, 1, -1, 1, -1, 0};
 
   double uct(Node *parent, Node *child) {
     if (child->visits == 0)
@@ -533,32 +555,13 @@ private:
   }
 
   Node *select(Node *node) {
-    QueenbeeEvaluator evaluator(&node->state);
-
     while (node->untriedMoves.empty() && !node->children.empty()) {
       double bestValue = -1e18;
-      int bestEval = -1e9;
       Node *bestChild = nullptr;
-      int currentPlayer = (node == root) ? rootPlayer : -node->player;
-
       for (auto child : node->children) {
         double uctVal = uct(node, child);
-        int evalScore = evaluator.evaluate(&child->state, currentPlayer);
-
-        bool dominated = false;
-        if (bestChild != nullptr && bestEval > -1e8) {
-          int evalDiff = bestEval - evalScore;
-          if (evalDiff > 300) {
-            double uctDiff = bestValue - uctVal;
-            if (uctDiff > 0.5) {
-              dominated = true;
-            }
-          }
-        }
-
-        if (!dominated && uctVal > bestValue) {
+        if (uctVal > bestValue) {
           bestValue = uctVal;
-          bestEval = evalScore;
           bestChild = child;
         }
       }
@@ -593,26 +596,24 @@ private:
     if (node == root)
       currentPlayer = rootPlayer;
 
-    vector<Move> moves = generateMoves(simState, currentPlayer);
-    random_shuffle(moves.begin(), moves.end());
-
-    int ptr = 0;
     while (true) {
       if (simState.checkWin(1))
         return 1;
       if (simState.checkWin(-1))
         return -1;
-      if (ptr >= (int)moves.size())
+
+      vector<Move> moves = generateMoves(simState, currentPlayer);
+      if (moves.empty())
         break;
 
-      Move mv = moves[ptr++];
-      if (simState.board[mv.x][mv.y] != 0)
-        continue;
+      Move mv = moves[rand() % moves.size()];
       simState.placeAndUpdate(mv.x, mv.y, currentPlayer);
       currentPlayer = -currentPlayer;
     }
     if (simState.checkWin(1))
       return 1;
+    if (simState.checkWin(-1))
+      return -1;
     return -1;
   }
 
@@ -627,6 +628,16 @@ private:
 
   vector<Move> generateMoves(HexState &state, int player) {
     vector<Move> moves;
+    bool seen[SIZE + 2][SIZE + 2];
+    memset(seen, 0, sizeof(seen));
+
+    auto pushMove = [&](int x, int y) {
+      if (!state.valid(x, y) || seen[x][y])
+        return;
+      seen[x][y] = true;
+      moves.push_back({x, y});
+    };
+
     bool emptyBoard = true;
     for (int i = 1; i <= SIZE && emptyBoard; i++) {
       for (int j = 1; j <= SIZE; j++) {
@@ -638,7 +649,7 @@ private:
     }
 
     if (emptyBoard) {
-      moves.push_back({SIZE / 2 + 1, SIZE / 2 + 1});
+      pushMove(SIZE / 2 + 1, SIZE / 2 + 1);
       return moves;
     }
 
@@ -647,8 +658,53 @@ private:
       for (int j = 1; j <= SIZE; j++) {
         if (state.board[i][j] != 0)
           continue;
-        if (helper.near_any(i, j) || helper.double_bridge(i, j, player)) {
-          moves.push_back({i, j});
+        if (helper.near_any(i, j) || helper.double_bridge(i, j, player) ||
+            helper.double_bridge(i, j, -player)) {
+          pushMove(i, j);
+        }
+      }
+    }
+
+    const int INF = INT_MAX / 4;
+    int res1A[SIZE + 2][SIZE + 2], res1B[SIZE + 2][SIZE + 2];
+    int res2A[SIZE + 2][SIZE + 2], res2B[SIZE + 2][SIZE + 2];
+    QueenbeeEvaluator qe(&state);
+    qe.computeDistances(1, res1A, res1B);
+    qe.computeDistances(-1, res2A, res2B);
+
+    int min1 = INF, min2 = INF;
+    for (int i = 1; i <= SIZE; i++) {
+      for (int j = 1; j <= SIZE; j++) {
+        if (state.board[i][j] != 0)
+          continue;
+        int s1 = res1A[i][j] + res1B[i][j];
+        int s2 = res2A[i][j] + res2B[i][j];
+        if (s1 < INF)
+          min1 = min(min1, s1);
+        if (s2 < INF)
+          min2 = min(min2, s2);
+      }
+    }
+
+    const int margin = 4;
+    for (int i = 1; i <= SIZE; i++) {
+      for (int j = 1; j <= SIZE; j++) {
+        if (state.board[i][j] != 0)
+          continue;
+        int s1 = res1A[i][j] + res1B[i][j];
+        int s2 = res2A[i][j] + res2B[i][j];
+        if (s1 < INF && s1 <= min1 + margin)
+          pushMove(i, j);
+        if (s2 < INF && s2 <= min2 + margin)
+          pushMove(i, j);
+      }
+    }
+
+    if (moves.empty()) {
+      for (int i = 1; i <= SIZE; i++) {
+        for (int j = 1; j <= SIZE; j++) {
+          if (state.board[i][j] == 0)
+            pushMove(i, j);
         }
       }
     }
@@ -748,12 +804,11 @@ int main() {
 
   int n;
   cin >> n;
-
-  if (!hex.loadFromInput(n)) {
+  if (!hex.loadFromInput(n,win)) {
     return 0;
   }
-
-  int current_player = 1;
+  int current_player=1;
+  
   int pieces = countPieces(hex);
 
   Move winMove = checkDirectWin(hex, current_player);
