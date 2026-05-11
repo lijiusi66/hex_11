@@ -9,8 +9,11 @@
 #include <queue>
 #include <set>
 #include <vector>
+#include <random>
+#include <chrono>
 using namespace std;
 int win;//win作为全局，用于判断是否获胜，先手连接上下，后手连接左右
+int check_count_of_node=0;
 const int num_of_near=6;
 const int SIZE = 11;
 const int TOTAL_CELLS = SIZE * SIZE;
@@ -84,7 +87,7 @@ public:
   }
 
   inline bool in_board(int x, int y) const { return board[x][y] != 2; }
-  inline bool valid(int x, int y) const { return board[x][y] == 0; }
+  inline bool valid(int x, int y) const { return x>=0&&x<=SIZE&&y>=0&&y<=SIZE&&board[x][y] == 0; }
   bool place(int x, int y, int player) {
     if (!in_board(x, y) || board[x][y] != 0)
       return false;
@@ -128,16 +131,16 @@ public:
           continue;
         int id = pos2id(x, y);
 
-        if (player == 1) {
+        if (idx==1) {
           if (y == 1)
-            uf[idx].unite(id, VIRTUAL_TOP);
+            uf[idx].unite(id, VIRTUAL_LEFT);
           if (y == SIZE)
-            uf[idx].unite(id, VIRTUAL_BOTTOM);
+            uf[idx].unite(id, VIRTUAL_RIGHT);
         } else {
           if (x == 1)
-            uf[idx].unite(id, VIRTUAL_LEFT);
+            uf[idx].unite(id, VIRTUAL_TOP);
           if (x == SIZE)
-            uf[idx].unite(id, VIRTUAL_RIGHT);
+            uf[idx].unite(id, VIRTUAL_BOTTOM);
         }
 
         for (int d = 0; d < 6; d++) {
@@ -585,7 +588,7 @@ private:
     Node *child = new Node(node, mv, nextPlayer);
     child->untriedMoves = generateMoves(child->state, -nextPlayer);
     node->children.push_back(child);
-
+    check_count_of_node++;
     return child;
   }
 
@@ -597,10 +600,8 @@ private:
       currentPlayer = rootPlayer;
 
     while (true) {
-      if (simState.checkWin(1))
-        return 1;
-      if (simState.checkWin(-1))
-        return -1;
+      if (simState.checkWin(currentPlayer))//如果进入这个if分支，说明当前执棋者胜利
+        return currentPlayer;
 
       vector<Move> moves = generateMoves(simState, currentPlayer);
       if (moves.empty())
@@ -625,91 +626,87 @@ private:
       node = node->parent;
     }
   }
-
-  vector<Move> generateMoves(HexState &state, int player) {
+vector<Move> generateMoves(HexState &state, int player) {
     vector<Move> moves;
+
     bool seen[SIZE + 2][SIZE + 2];
     memset(seen, 0, sizeof(seen));
 
+    const int dx[6] = {-1, -1, 0, 0, 1, 1};
+    const int dy[6] = {0, 1, -1, 1, -1, 0};
+
+    // Hex 双桥相关偏移
+    const int bx[6] = {-2, -1, 1, 2, 1, -1};
+    const int by[6] = {1, 2, 1, -1, -2, -1};
+
     auto pushMove = [&](int x, int y) {
-      if (!state.valid(x, y) || seen[x][y])
-        return;
-      seen[x][y] = true;
-      moves.push_back({x, y});
+        if (!state.valid(x, y)) return;
+        if (state.board[x][y] != 0) return;
+        if (seen[x][y]) return;
+
+        seen[x][y] = true;
+        moves.push_back({x, y});
     };
 
     bool emptyBoard = true;
+
     for (int i = 1; i <= SIZE && emptyBoard; i++) {
-      for (int j = 1; j <= SIZE; j++) {
-        if (state.board[i][j] != 0) {
-          emptyBoard = false;
-          break;
-        }
-      }
-    }
-
-    if (emptyBoard) {
-      pushMove(SIZE / 2 + 1, SIZE / 2 + 1);
-      return moves;
-    }
-
-    near helper(&state);
-    for (int i = 1; i <= SIZE; i++) {
-      for (int j = 1; j <= SIZE; j++) {
-        if (state.board[i][j] != 0)
-          continue;
-        if (helper.near_any(i, j) || helper.double_bridge(i, j, player) ||
-            helper.double_bridge(i, j, -player)) {
-          pushMove(i, j);
-        }
-      }
-    }
-
-    const int INF = INT_MAX / 4;
-    int res1A[SIZE + 2][SIZE + 2], res1B[SIZE + 2][SIZE + 2];
-    int res2A[SIZE + 2][SIZE + 2], res2B[SIZE + 2][SIZE + 2];
-    QueenbeeEvaluator qe(&state);
-    qe.computeDistances(1, res1A, res1B);
-    qe.computeDistances(-1, res2A, res2B);
-
-    int min1 = INF, min2 = INF;
-    for (int i = 1; i <= SIZE; i++) {
-      for (int j = 1; j <= SIZE; j++) {
-        if (state.board[i][j] != 0)
-          continue;
-        int s1 = res1A[i][j] + res1B[i][j];
-        int s2 = res2A[i][j] + res2B[i][j];
-        if (s1 < INF)
-          min1 = min(min1, s1);
-        if (s2 < INF)
-          min2 = min(min2, s2);
-      }
-    }
-
-    const int margin = 4;
-    for (int i = 1; i <= SIZE; i++) {
-      for (int j = 1; j <= SIZE; j++) {
-        if (state.board[i][j] != 0)
-          continue;
-        int s1 = res1A[i][j] + res1B[i][j];
-        int s2 = res2A[i][j] + res2B[i][j];
-        if (s1 < INF && s1 <= min1 + margin)
-          pushMove(i, j);
-        if (s2 < INF && s2 <= min2 + margin)
-          pushMove(i, j);
-      }
-    }
-
-    if (moves.empty()) {
-      for (int i = 1; i <= SIZE; i++) {
         for (int j = 1; j <= SIZE; j++) {
-          if (state.board[i][j] == 0)
-            pushMove(i, j);
+            if (state.board[i][j] != 0) {
+                emptyBoard = false;
+                break;
+            }
         }
-      }
     }
+
+    // 开局中心
+    if (emptyBoard) {
+        pushMove(SIZE / 2 + 1, SIZE / 2 + 1);
+        return moves;
+    }
+
+    for (int i = 1; i <= SIZE; i++) {
+        for (int j = 1; j <= SIZE; j++) {
+
+            if (state.board[i][j] == 0)
+                continue;
+
+            // 1. 普通六邻域
+            for (int d = 0; d < 6; d++) {
+                int nx = i + dx[d];
+                int ny = j + dy[d];
+
+                pushMove(nx, ny);
+            }
+
+            // 2. 双桥邻域
+            for (int d = 0; d < 6; d++) {
+                int nx = i + bx[d];
+                int ny = j + by[d];
+
+                pushMove(nx, ny);
+            }
+        }
+    }
+
+    // fallback
+    if (moves.empty()) {
+        for (int i = 1; i <= SIZE; i++) {
+            for (int j = 1; j <= SIZE; j++) {
+                if (state.board[i][j] == 0)
+                    moves.push_back({i, j});
+            }
+        }
+    }
+
+    static mt19937 rng(
+        chrono::steady_clock::now().time_since_epoch().count()
+    );
+
+    shuffle(moves.begin(), moves.end(), rng);
+
     return moves;
-  }
+}
 
 public:
   MCTS(HexState *state, int player) {
@@ -834,11 +831,13 @@ int main() {
     MCTS mcts(&hex, current_player);
     Move best = mcts.search(0.9);
     cout << best.x-1 << " " << best.y-1 << endl;
+    cout<<check_count_of_node;
     return 0;
   }
 
   MCTS mcts(&hex, current_player);
   Move best_move = mcts.search(0.85);
   cout << best_move.x-1 << " " << best_move.y-1 << endl;
+  cout<<check_count_of_node;
   return 0;
 }
