@@ -1259,10 +1259,19 @@ int main() {
   HexState hex;
   using clk = chrono::steady_clock;
   auto t_start = clk::now();
+  #ifndef _BOTZONE_ONLINE
+  freopen("in.txt", "r", stdin);
+#endif
+  int n;
+  cin >> n;
+  if (!hex.loadFromInput(n, win)) {
+    cout.flush();
+    _exit(0);
+  }
+  int pieces = countPieces(hex);
   constexpr double HARD_LIMIT = 0.95;
   double elapsed = chrono::duration<double>(clk::now() - t_start).count();
   double remaining = HARD_LIMIT - elapsed;
-  int pieces = countPieces(hex);
   double base_budget;
   if (pieces >= 80)      base_budget = 0.80;
   else if (pieces >= 50) base_budget = 0.85;
@@ -1271,16 +1280,6 @@ int main() {
   double time_limit = min(base_budget, remaining);
   if (time_limit < 0.05) time_limit = 0.05;
 
-#ifndef _BOTZONE_ONLINE
-  freopen("in.txt", "r", stdin);
-#endif
-
-  int n;
-  cin >> n;
-  if (!hex.loadFromInput(n, win)) {
-    cout.flush();
-    _exit(0);
-  }
   int current_player = 1;
   MCTS mcts(&hex, current_player);
   vector<Move> tactical = mustRespond(hex, current_player);
