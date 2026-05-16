@@ -13,6 +13,10 @@
 #include <chrono>
 #include <unistd.h>   // _exit
 using namespace std;
+
+
+
+
 // =====================================================================
 // 全局棋局/方向常量
 // ---------------------------------------------------------------------
@@ -23,6 +27,10 @@ using namespace std;
 // =====================================================================
 int win;
 int check_count_of_node=0;
+// [新增] 用于控制 MCTS 候选生成的距离限制
+// 开局阶段（棋子数 <= 6）设为 3，允许更多探索
+// 中局/残局设为 2，聚焦关键区域
+int g_limDist = 2;
 const int num_of_near=6;
 const int SIZE = 11;
 const int TOTAL_CELLS = SIZE * SIZE;
@@ -873,7 +881,7 @@ private:
   int rootPlayer;
 
   // UCT 常数：Hex 实践经验 0.7~1.0 比 1.414 更合理（wins 已规一化到 [0,1]）
-  static constexpr double C_UCT = 0.9;
+  static constexpr double C_UCT = 0.4;
 
   double uct(Node *parent, Node *child) {
     if (child->visits == 0)
@@ -921,10 +929,110 @@ private:
   }
 
   // Hex 不会和棋；模拟到一方连通即可结束。
-  // Step 3 重写：
-  //   * 用 emptyCodes 空格池替代每步全棋盘扫描的 generateMoves
-  //   * 用 rolloutBridgeSave 做轻量桥保护（局部 O(36)）
-  //   * 共享 mt19937，避免 rand() 的低质量
+  // 在模拟阶段放置棋子并维护空位池
+  void placeWithBridge(HexState &simState, vector<int> &empties, int posInEmpty[], int ENC, 
+                       int x, int y, int currentPlayer) {
+    simState.placeAndUpdate(x, y, currentPlayer);
+    int targetCode = x * ENC + y;
+    int k = posInEmpty[targetCode];
+    int lastCode = empties.back();
+    empties[k] = lastCode;
+    posInEmpty[lastCode] = k;
+    posInEmpty[targetCode] = -1;
+    empties.pop_back();
+  }
+
+  // 检查并处理桥结构
+// 当新下的棋子形成桥时，立即补上另一个承载点
+  void checkAndPlaceBridges(HexState &simState, vector<int> &empties, int posInEmpty[], 
+                            int ENC, int x, int y, mt19937 &rng) {
+    int player = simState.board[x][y];
+    
+    if (x + 1 <= SIZE && y - 2 >= 1 && simState.board[x][y] == simState.board[x + 1][y - 2]) {
+      if (simState.board[x + 1][y - 1] == 0 && simState.board[x][y - 1] == 0) {
+        if (rng() & 1) {
+          placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, player);// 先补承载点1
+          placeWithBridge(simState, empties, posInEmpty, ENC, x, y - 1, -player);// 再对手补承载点
+        } else {
+          placeWithBridge(simState, empties, posInEmpty, ENC, x, y - 1, -player);// 先补承载点2
+          placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, player);// 再补承载点1
+        }
+      }
+    }
+
+    if (x + 1 <= SIZE && y + 1 <= SIZE && simState.board[x][y] == simState.board[x + 1][y + 1]) {
+      if (simState.board[x][y + 1] == 0 && simState.board[x + 1][y] == 0) {
+        if (rng() & 1) {
+          placeWithBridge(simState, empties, posInEmpty, ENC, x, y + 1, player);
+          placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y, -player);
+        } else {
+          placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y, -player);
+          placeWithBridge(simState, empties, posInEmpty, ENC, x, y + 1, player);
+        }
+      }
+    }
+
+    if (x + 2 <= SIZE && y - 1 >= 1 && simState.board[x][y] == simState.board[x + 2][y - 1]) {
+      if (simState.board[x + 1][y - 1] == 0 && simState.board[x + 1][y] == 0) {
+        if (rng() & 1) {
+          placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, player);
+          placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y, -player);
+        } else {
+          placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y, -player);
+          placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, player);
+        }
+      }
+    }
+
+    if (player == 1) {
+      if (x == 2 && y < SIZE) {
+        if (simState.board[x - 1][y] == 0 && simState.board[x - 1][y + 1] == 0) {
+          if (rng() & 1) {
+            placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y, player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y + 1, -player);
+          } else {
+            placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y + 1, -player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y, player);
+          }
+        }
+      }
+      if (x == SIZE - 1 && y > 1) {
+        if (simState.board[x + 1][y - 1] == 0 && simState.board[x + 1][y] == 0) {
+          if (rng() & 1) {
+            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y, player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, -player);
+          } else {
+            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, -player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y, player);
+          }
+        }
+      }
+    } else {
+      if (x < SIZE && y == 2) {
+        if (simState.board[x][y - 1] == 0 && simState.board[x + 1][y - 1] == 0) {
+          if (rng() & 1) {
+            placeWithBridge(simState, empties, posInEmpty, ENC, x, y - 1, player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, -player);
+          } else {
+            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, -player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x, y - 1, player);
+          }
+        }
+      }
+      if (x > 1 && y == SIZE - 1) {
+        if (simState.board[x][y + 1] == 0 && simState.board[x - 1][y + 1] == 0) {
+          if (rng() & 1) {
+            placeWithBridge(simState, empties, posInEmpty, ENC, x, y + 1, player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y + 1, -player);
+          } else {
+            placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y + 1, -player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x, y + 1, player);
+          }
+        }
+      }
+    }
+  }
+
   int simulate(Node *node) {
     HexState simState = node->state;
 
@@ -933,10 +1041,6 @@ private:
 
     int currentPlayer = (node == root) ? rootPlayer : -node->player;
 
-    // 空格池：(x*ENC + y) 编码；同时维护 posInEmpty 反查表
-    //   - empties[k] -> 编码    （vector）
-    //   - posInEmpty[code] -> 在 empties 中的 index 或 -1
-    // 这样移除某编码是 O(1) swap-with-back，避免 60 步 × 60 比较的开销
     const int ENC = SIZE + 2;
     static int posInEmpty[(SIZE + 2) * (SIZE + 2)];
     for (int i = 0; i < (SIZE + 2) * (SIZE + 2); i++) posInEmpty[i] = -1;
@@ -969,19 +1073,17 @@ private:
         mv = {code / ENC, code % ENC};
       }
 
-      simState.placeAndUpdate(mv.x, mv.y, currentPlayer);
-
-      // O(1) 移除当前格
-      int targetCode = mv.x * ENC + mv.y;
-      int k = posInEmpty[targetCode];
-      int lastCode = empties.back();
-      empties[k] = lastCode;
-      posInEmpty[lastCode] = k;
-      posInEmpty[targetCode] = -1;
-      empties.pop_back();
+      placeWithBridge(simState, empties, posInEmpty, ENC, mv.x, mv.y, currentPlayer);
 
       if (simState.checkWin(currentPlayer))
         return currentPlayer;
+
+      checkAndPlaceBridges(simState, empties, posInEmpty, ENC, mv.x, mv.y, rng);
+
+      if (simState.checkWin(currentPlayer))
+        return currentPlayer;
+      if (simState.checkWin(-currentPlayer))
+        return -currentPlayer;
 
       lastX = mv.x;
       lastY = mv.y;
@@ -1005,69 +1107,74 @@ private:
       node = node->parent;
     }
   }
-// MCTS 候选（用于 expand 的 untriedMoves）。
-//   * 必应优先（必胜 / 封堵 / 桥保护）：直接返回，强剪枝
-//   * 否则按 candidateScore 排序，截到 widthCap 个高分候选
-//   * 排序后将最高分放在 vector 末尾，让 expand pop_back 拿到最优先候选
-//   * widthCap：root 处通常给得宽一些（更多备选），内部节点收紧以提高深度
+
 vector<Move> generateMoves(HexState &state, int player, int widthCap = 20) {
     vector<Move> tactical = mustRespond(state, player);
     if (!tactical.empty()) return tactical;
 
-    // 一次性算出 pieces 和目标轴跨度，传给 candidateScore（O(SIZE²)→O(1) 共用）
     int pieces = 0;
     for (int i = 1; i <= SIZE; i++)
       for (int j = 1; j <= SIZE; j++)
         if (state.board[i][j] != 0) pieces++;
     AxisStat axis = computeAxisStat(state, player);
 
-    bool seen[SIZE + 2][SIZE + 2];
-    memset(seen, 0, sizeof(seen));
+    if (pieces == 0) {
+      return { {SIZE / 2 + 1, SIZE / 2 + 1} };
+    }
 
     static const int dx[6] = {-1, -1, 0, 0, 1, 1};
     static const int dy[6] = { 0,  1,-1, 1,-1, 0};
-    static const int bx[6] = {-2, -1, 1, 2, 1, -1};
-    static const int by[6] = { 1,  2, 1,-1,-2, -1};
+
+    int dist[SIZE + 2][SIZE + 2];
+    memset(dist, -1, sizeof(dist));//初始化为 -1（表示未访问）
+
+    int qx[121], qy[121];// BFS 队列
+    int ql = 0, qr = -1;// 队列首尾指针
+    // 把所有现有棋子加入队列，距离设为 0
+    for (int i = 1; i <= SIZE; i++) {
+      for (int j = 1; j <= SIZE; j++) {
+        if (state.board[i][j] != 0) {
+          dist[i][j] = 0;
+          qr++;
+          qx[qr] = i;
+          qy[qr] = j;
+        }
+      }
+    }
+    //开局阶段 （棋子数 ≤ 6）：限制为 3 步 ，允许更多探索
+    //中局/残局 ：限制为 2 步 ，聚焦关键区域
+    int limDist = g_limDist;
+    if (pieces <= 6) limDist = 3;
+
+    while (ql <= qr) {
+      int x = qx[ql], y = qy[ql];
+      ql++;
+      if (dist[x][y] == limDist) break;// 达到限制，停止扩散
+      for (int d = 0; d < 6; d++) {
+        int nx = x + dx[d], ny = y + dy[d];
+        if (nx < 1 || nx > SIZE || ny < 1 || ny > SIZE) continue;
+        if (dist[nx][ny] != -1) continue;
+        dist[nx][ny] = dist[x][y] + 1;
+        qr++;
+        qx[qr] = nx;
+        qy[qr] = ny;
+      }
+    }
 
     struct Scored { int x, y, s; };
     vector<Scored> scored;
     scored.reserve(64);
-
-    auto add = [&](int x, int y) {
-      if (x < 1 || x > SIZE || y < 1 || y > SIZE) return;
-      if (state.board[x][y] != 0) return;
-      if (seen[x][y]) return;
-      seen[x][y] = true;
-      scored.push_back({x, y, candidateScore(state, x, y, player, pieces, axis)});
-    };
-
-    bool emptyBoard = (pieces == 0);
-    if (emptyBoard) {
-      // 开局直接走中心点（与 start_first 一致）；这条路径几乎不会进，
-      // 因为 main 的 pieces<=3 早就走 starter 了。
-      return { {SIZE / 2 + 1, SIZE / 2 + 1} };
-    }
-
-    // 开局阶段（pieces 较少）扩大候选半径：除了邻居+桥位外，
-    // 把全棋盘所有空格也纳入候选，让 MCTS 能考虑“跨棋盘”着法，
-    // 否则候选只在 C2 周围转。
-    const bool earlyGame = pieces < 8;
-    if (earlyGame) {
-      for (int i = 1; i <= SIZE; i++)
-        for (int j = 1; j <= SIZE; j++)
-          add(i, j);
-    } else {
-      for (int i = 1; i <= SIZE; i++) {
-        for (int j = 1; j <= SIZE; j++) {
-          if (state.board[i][j] == 0) continue;
-          for (int d = 0; d < 6; d++) add(i + dx[d], j + dy[d]);
-          for (int d = 0; d < 6; d++) add(i + bx[d], j + by[d]);
+// 只收集距离在 [1, limDist] 范围内的空格
+    for (int i = 1; i <= SIZE; i++) {
+      for (int j = 1; j <= SIZE; j++) {
+        if (dist[i][j] > 0 && dist[i][j] <= limDist) {
+          // 计算启发分数
+          scored.push_back({i, j, candidateScore(state, i, j, player, pieces, axis)});
         }
       }
     }
 
     if (scored.empty()) {
-      // 罕见：邻接区域已满，扫描全空格
       for (int i = 1; i <= SIZE; i++) {
         for (int j = 1; j <= SIZE; j++) {
           if (state.board[i][j] == 0)
@@ -1076,13 +1183,11 @@ vector<Move> generateMoves(HexState &state, int player, int widthCap = 20) {
       }
     }
 
-    // 降序排序，截到宽度上限
     sort(scored.begin(), scored.end(),
          [](const Scored &a, const Scored &b) { return a.s > b.s; });
 
     if ((int)scored.size() > widthCap) scored.resize(widthCap);
 
-    // 反转：最高分放在末尾 → expand 用 pop_back 自然先试好棋
     reverse(scored.begin(), scored.end());
 
     vector<Move> moves;
@@ -1155,87 +1260,124 @@ int countPieces(HexState &state) {
   return cnt;
 }
 
-// =====================================================================
-// 开局库（根据 HexWiki 11×11 开局资料）
-// ---------------------------------------------------------------------
-// 规则：第一手强制下在 C2 (3,2)
-// 参考：https://www.hexwiki.net/index.php/Openings_on_11_x_11
-// =====================================================================
+int openingBookActions3rd[121] = {
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,80,40,45,80,48,50,45,-1,
+  -1,35,73,34,40,40,73,73,45,-1,-1,
+  -1,73,80,80,50,80,61,73,80,45,45,
+  -1,80,80,45,45,50,42,80,80,50,58,
+  40,70,45,59,45,80,80,80,80,72,80,
+  84,85,51,45,45,70,80,80,80,51,80,
+  59,80,80,51,45,80,70,70,80,72,60,
+  50,59,45,69,80,80,80,70,70,80,72,
+  42,71,100,80,80,70,96,70,70,80,40,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+};
+
+int openingBookActions4th[121] = {
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  40,40,-1,40,40,40,28,40,95,51,62,
+  71,40,40,40,71,40,96,47,83,62,95,
+  95,36,95,95,95,50,95,83,83,40,20,
+  40,71,71,71,71,71,71,62,29,40,40,
+  92,95,40,71,71,71,40,40,40,96,96,
+  40,40,59,71,81,40,40,84,40,96,40,
+  40,93,90,-1,70,71,50,50,40,107,40,
+  47,40,79,71,71,40,40,84,50,50,40,
+  40,40,40,40,40,50,50,40,40,40,40,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
+};
+
+inline int gid(int x, int y) { return (x - 1) * SIZE + (y - 1); }//坐标转索引
+inline void revid(int id, int &x, int &y) { x = id / SIZE + 1; y = id % SIZE + 1; }//索引转坐标
+
 Move openingBook(HexState &state, int player) {
   int pieces = countPieces(state);
 
-  // 强制第一手 C2
   if (pieces == 0)
     return {3, 2};
 
-  // ====================== 蓝方（后手）======================
-  if (player == -1) {
-    // 红C2 → 蓝d8（主开局）
-    if (pieces == 1 && state.board[3][2] == 1)
-      return {8, 4};
+  if (pieces == 1 && player == -1)
+    return {8, 4};
 
-    // 红C2 → d8 → h7 → 蓝h4
-    if (pieces == 3 && state.board[3][2]==1 && state.board[8][4]==-1 && state.board[8][7]==1)
-      return {4, 8};
-
-    // 红C2 → d8 → b8 → 蓝h4
-    if (pieces == 3 && state.board[3][2]==1 && state.board[8][4]==-1 && state.board[2][8]==1)
-      return {4, 8};
-
-    // 红C2 → g8 → d8 → 蓝d5
-    if (pieces == 3 && state.board[3][2]==1 && state.board[8][7]==-1 && state.board[8][4]==1)
-      return {4,5};
-
-    // 红C2 → f6 → h7 → 蓝h5
-    if (pieces == 3 && state.board[3][2]==1 && state.board[6][6]==-1 && state.board[8][7]==1)
-      return {5,8};
-
-    // 红C2→f6→h7→h5→b5 → 蓝d7
-    if (pieces ==5 && state.board[3][2]==1 && state.board[6][6]==-1 && state.board[8][7]==1
-        && state.board[5][8]==-1 && state.board[2][5]==1)
-      return {7,4};
+  if (pieces == 2 && player == 1) {
+    for (int i = 1; i <= SIZE; i++) {
+      for (int j = 1; j <= SIZE; j++) {
+        if (state.board[i][j] == -1) {
+          int idx = gid(i, j);
+          if (openingBookActions3rd[idx] != -1) {
+            int x, y;
+            revid(openingBookActions3rd[idx], x, y);
+            return {x, y};
+          }
+        }
+      }
+    }
   }
 
-  // ====================== 红方（先手）======================
+  if (pieces == 3 && player == -1) {
+    for (int i = 1; i <= SIZE; i++) {
+      for (int j = 1; j <= SIZE; j++) {
+        if (state.board[i][j] == 1 && !(i == 3 && j == 2) && !(i == 8 && j == 4)) {
+          int idx = gid(i, j);
+          if (openingBookActions4th[idx] != -1) {
+            int x, y;
+            revid(openingBookActions4th[idx], x, y);
+            return {x, y};
+          }
+        }
+      }
+    }
+  }
+
+  if (player == -1) {
+    if (pieces == 1 && state.board[3][2] == 1)
+      return {4, 8};
+
+    if (pieces == 3 && state.board[3][2]==1 && state.board[4][8]==-1 && state.board[8][7]==1)
+      return {8, 4};
+
+    if (pieces == 3 && state.board[3][2]==1 && state.board[4][8]==-1 && state.board[2][8]==1)
+      return {8, 4};
+
+    if (pieces == 3 && state.board[3][2]==1 && state.board[7][8]==-1 && state.board[4][8]==1)
+      return {4,5};
+
+    if (pieces == 3 && state.board[3][2]==1 && state.board[6][6]==-1 && state.board[8][7]==1)
+      return {8,5};
+
+    if (pieces ==5 && state.board[3][2]==1 && state.board[6][6]==-1 && state.board[8][7]==1
+        && state.board[8][5]==-1 && state.board[2][5]==1)
+      return {4,7};
+  }
+
   if (player == 1) {
-    // 开局1：C2 → d8 → h7
-    if (pieces ==2 && state.board[8][4]==-1)
+    if (pieces ==2 && state.board[4][8]==-1)
       return {8,7};
 
-    // 开局2：C2 → d8 → b8
-    // if (pieces ==2 && state.board[8][4]==-1)
-    //   return {2,8};
+    if (pieces ==2 && state.board[7][8]==-1)
+      return {4,8};
 
-    // 开局3：C2 → g8 → d8
-    if (pieces ==2 && state.board[8][7]==-1)
-      return {8,4};
-
-    // 开局4：C2 → f6 → h7
     if (pieces ==2 && state.board[6][6]==-1)
       return {8,7};
 
-    // 续：C2→d8→b8→h4 → j4
     if (pieces ==4 && state.board[2][8]==1 && state.board[8][4]==-1 && state.board[4][8]==-1)
       return {10,4};
 
-    // 续：C2→f6→h7→h5 → b5
-    if (pieces ==4 && state.board[6][6]==-1 && state.board[8][7]==1 && state.board[5][8]==-1)
+    if (pieces ==4 && state.board[6][6]==-1 && state.board[8][7]==1 && state.board[8][5]==-1)
       return {2,5};
 
-    // 续：C2→f6→h7→h5→b5→d7 → b8（必胜）
-    if (pieces ==6 && state.board[6][6]==-1 && state.board[8][7]==1 && state.board[5][8]==-1
-        && state.board[2][5]==1 && state.board[7][4]==-1)
+    if (pieces ==6 && state.board[6][6]==-1 && state.board[8][7]==1 && state.board[8][5]==-1
+        && state.board[2][5]==1 && state.board[4][7]==-1)
       return {2,8};
   }
 
   return {-1, -1};
 }
 
+extern int g_limDist;
+
 // 输出一手并立刻退出。
-//   * flush stdout 防 botzone 收不到
-//   * _exit(0) 跳过全局对象与 MCTS 树析构
-//     —— MCTS 树有 ~10 万节点，按 vector<Node*> 递归 delete 实测 30~80ms，
-//     在 1 秒上限里很容易把整体 wall time 顶过 1 秒。
 [[noreturn]] static void emitAndExit(int bx, int by) {
   cout << bx << ' ' << by << '\n';
   cout.flush();
@@ -1243,7 +1385,6 @@ Move openingBook(HexState &state, int player) {
 }
 
 int main() {
-  // 启动起点：所有“1 秒预算”都从这里开始算
   using clk = chrono::steady_clock;
   auto t_start = clk::now();
 
@@ -1259,13 +1400,11 @@ int main() {
   int n;
   cin >> n;
   if (!hex.loadFromInput(n, win)) {
-    // loadFromInput 已经直接 cout 了固定开局，flush 一下再退出
     cout.flush();
     _exit(0);
   }
   int current_player = 1;
 
-  // root 处先走一遍“必应”三件套（必胜 / 必应封堵 / 桥保护）
   vector<Move> tactical = mustRespond(hex, current_player);
   if (!tactical.empty()) {
     Move m = tactical.front();
@@ -1273,32 +1412,32 @@ int main() {
   }
 
   int pieces = countPieces(hex);
-  //只用前三步就可以，红：C2；蓝：d8；红：h7；
-  
-  if (pieces <= 3) {
+
+  if (pieces <= 6) {
+    g_limDist = 3;
+  } else {
+    g_limDist = 2;
+  }
+
+  if (pieces <= 5) {
     Move bookMove = openingBook(hex, current_player);
     if (bookMove.x > 0) {
         emitAndExit(bookMove.x - 1, bookMove.y - 1);
     }
-}
+  }
 
-  // ------ 时间预算（wall clock） ------
-  // botzone 单回合上限 1.0s。我们要确保：
-  //     (启动 + 读输入 + mustRespond 扫描 + MCTS 构造) + search + (输出 flush) ≤ 1s
-  // 前后这两段在 11×11 板上一般 30~80ms，
-  // 所以给 search 留 0.85s 比较稳，而不是吃满到 0.94s。
-  constexpr double HARD_LIMIT = 0.97;  // 给 botzone 留 30ms 网络 buffer
+  constexpr double HARD_LIMIT = 0.95;
   double elapsed = chrono::duration<double>(clk::now() - t_start).count();
   double remaining = HARD_LIMIT - elapsed;
 
   double base_budget;
   if (pieces >= 80)      base_budget = 0.80;
-  else if (pieces >= 30) base_budget = 0.85;
-  else                   base_budget = 0.85;
+  else if (pieces >= 50) base_budget = 0.85;
+  else if (pieces >= 30) base_budget = 0.88;
+  else                   base_budget = 0.90;
   double time_limit = min(base_budget, remaining);
-  if (time_limit < 0.05) time_limit = 0.05;  // 极端情况下兜底
+  if (time_limit < 0.05) time_limit = 0.05;
 
-  // 本地调试时允许通过环境变量 HEX_THINK_TIME 覆盖
 #ifndef _BOTZONE_ONLINE
   if (const char *env = getenv("HEX_THINK_TIME"))
     time_limit = atof(env);
