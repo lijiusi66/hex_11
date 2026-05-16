@@ -1269,6 +1269,11 @@ int main() {
     _exit(0);
   }
   int pieces = countPieces(hex);
+  if (pieces <= 6) {
+    g_limDist = 3;
+  } else {
+    g_limDist = 2;
+  }
   constexpr double HARD_LIMIT = 0.95;
   double elapsed = chrono::duration<double>(clk::now() - t_start).count();
   double remaining = HARD_LIMIT - elapsed;
@@ -1286,12 +1291,6 @@ int main() {
   if (!tactical.empty()) {
     Move m = mcts.bridge_search(tactical,time_limit);
     emitAndExit(m.x - 1, m.y - 1);
-  }
-
-  if (pieces <= 6) {
-    g_limDist = 3;
-  } else {
-    g_limDist = 2;
   }
 
   if (pieces <= 5) {
