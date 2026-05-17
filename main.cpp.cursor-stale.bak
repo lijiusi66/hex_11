@@ -1,3 +1,4 @@
+// [editor] full source on disk — 若只显示几行请在标签页选「Revert File」或关闭后从侧栏再打开
 #include <algorithm>
 #include <climits>
 #include <cmath>
@@ -13,7 +14,10 @@
 #include <chrono>
 #include <unistd.h>   // _exit
 using namespace std;
-float log_[101]={0,0,0.693147,1.09861,1.38629,1.60944,1.79176,1.94591,2.07944,2.19722,2.30259,2.3979,2.48491,2.56495,2.63906,2.70805,2.77259,2.83321,2.89037,2.94444,2.99573,3.04452,3.09104,3.13549,3.17805,3.21888,3.2581,3.29584,3.3322,3.3673,3.4012,3.43399,3.46574,3.49651,3.52636,3.55535,3.58352,3.61092,3.63759,3.66356,3.68888,3.71357,3.73767,3.7612,3.78419,3.80666,3.82864,3.85015,3.8712,3.89182,3.91202,3.93183,3.95124,3.97029,3.98898,4.00733,4.02535,4.04305,4.06044,4.07754,4.09434,4.11087,4.12713,4.14313,4.15888,4.17439,4.18965,4.20469,4.21951,4.23411,4.2485,4.26268,4.27667,4.29046,4.30407,4.31749,4.33073,4.34381,4.35671,4.36945,4.38203,4.39445,4.40672,4.41884,4.43082,4.44265,4.45435,4.46591,4.47734,4.48864,4.49981,4.51086,4.52179,4.5326,4.54329,4.55388,4.56435,4.57471,4.58497,4.59512,4.60517};
+
+
+
+
 // =====================================================================
 // 全局棋局/方向常量
 // ---------------------------------------------------------------------
@@ -305,22 +309,21 @@ inline AxisStat computeAxisStat(HexState &state, int player) {
 //   - 中盘/残局：邻接、桥位、封堵权重升高，跨度奖励淡出。
 // axis：通过 computeAxisStat 一次性算出，避免每个候选重复 O(SIZE²) 扫描。
 // =====================================================================
-inline int candidateScore(HexState &state, int x, int y, int player, 
+inline int candidateScore(HexState &state, int x, int y, int player,
                           int pieces, const AxisStat &axis) {
   static const int dx[6] = {-1, -1, 0, 0, 1, 1};
-  static const int dy[6] = {0, 1, -1, 1, -1, 0};
+  static const int dy[6] = { 0,  1,-1, 1,-1, 0};
   const int cx = SIZE / 2 + 1, cy = SIZE / 2 + 1;
 
-  const bool earlyGame = pieces < 12;   // MoHex: 前12手算开局
-  const bool veryEarly = pieces < 6;    // 前6手算极早期
+  const bool earlyGame = pieces < 8;
+  const bool veryEarly = pieces < 4;
   int score = 0;
-  bool isMyTurnVertical = (win == 1 && player == 1) || (win == 0 && player == -1);
-  
-  // ========== 1) 中心倾向 ==========
-  int centerDist = abs(x - cx) + abs(y - cy);
-  score -= (earlyGame ? 10 : 5) * centerDist;
 
-  // ========== 2) 邻接奖励（MoHex 标准权重）==========
+  // 1) 中心倾向：早期权重更大（鼓励向中央铺开）
+  int centerDist = abs(x - cx) + abs(y - cy);
+  score -= (earlyGame ? 12 : 4) * centerDist;
+
+  // 2) 邻接奖励：开局收紧（避免一手紧贴 C2 反复套娃）
   int myAdj = 0, oppAdj = 0;
   for (int d = 0; d < 6; d++) {
     int nx = x + dx[d], ny = y + dy[d];
@@ -328,90 +331,220 @@ inline int candidateScore(HexState &state, int x, int y, int player,
     if (state.board[nx][ny] == player) myAdj++;
     else if (state.board[nx][ny] == -player) oppAdj++;
   }
-  
-  // 邻接权重：极早期低（避免扎堆），中盘高
-  int adjWeight = veryEarly ? 3 : (earlyGame ? 8 : 15);
+  int adjWeight = veryEarly ? 4 : (earlyGame ? 9 : 18);
   score += adjWeight * myAdj;
-  score += (earlyGame ? 5 : 10) * oppAdj;  // 封堵权重
+  // 邻接对手：用于封堵 / 抢边对面格
+  score += (earlyGame ? 4 : 18) * oppAdj;
 
-  // ========== 3) 桥位奖励（核心 Hex 战术）==========
+  // 3) 桥位：和某颗己方棋子构成双桥（开局也鼓励，但权重略低于中盘）
+  // --- 封堵对方双桥加分在紧接的「3b」两段 for 里（与 BRIDGE_/CARRIER_ 及 bridgeSaves 同一几何）---
   for (int b = 0; b < 6; b++) {
-    int bx = x + BRIDGE_DX[b], by = y + BRIDGE_DY[b];
-    if (bx < 1 || bx > SIZE || by < 1 || by > SIZE) continue;
-    if (state.board[bx][by] != player) continue;
-    
+    int bx_ = x + BRIDGE_DX[b], by_ = y + BRIDGE_DY[b];
+    if (bx_ < 0 || bx_ >= SIZE || by_ < 0 || by_ >= SIZE) continue;
+    if (state.board[bx_][by_] !=2&&state.board[bx_][by_] != player) continue;
     int c1x = x + CARRIER1_DX[b], c1y = y + CARRIER1_DY[b];
     int c2x = x + CARRIER2_DX[b], c2y = y + CARRIER2_DY[b];
-    
-    // 完整桥（两个carrier都空）vs 半桥
-    int bridgeBonus = (state.board[c1x][c1y] == 0 && state.board[c2x][c2y] == 0) 
-                      ? 32 : 6;
-    score += earlyGame ? (bridgeBonus * 2 / 3) : bridgeBonus;
+    int bridgeBonus = (state.board[c1x][c1y] == 0 &&
+                       state.board[c2x][c2y] == 0) ? 32 : 5;
+    score += earlyGame ? (bridgeBonus * 7 / 10) : bridgeBonus;
   }
 
-  // ========== 4) 封堵对方桥（MoHex savebridge 模式）==========
+  // 3b) 封堵对方双桥：候选 (x,y) 为对方两枚桥端之间的 carrier（与 bridgeSaves 几何互反）
   const int opp = -player;
   for (int b = 0; b < 6; b++) {
-    // 检查 (x,y) 是否是对方桥的 carrier
     int s1x = x - CARRIER1_DX[b], s1y = y - CARRIER1_DY[b];
     int p1x = s1x + BRIDGE_DX[b], p1y = s1y + BRIDGE_DY[b];
+    int oc1x = s1x + CARRIER1_DX[b], oc1y = s1y + CARRIER1_DY[b];
     int oc2x = s1x + CARRIER2_DX[b], oc2y = s1y + CARRIER2_DY[b];
-    
-    if (s1x >= 1 && s1x <= SIZE && s1y >= 1 && s1y <= SIZE &&
+    if (oc1x == x && oc1y == y &&
+        s1x >= 1 && s1x <= SIZE && s1y >= 1 && s1y <= SIZE &&
         p1x >= 1 && p1x <= SIZE && p1y >= 1 && p1y <= SIZE &&
         state.board[s1x][s1y] == opp && state.board[p1x][p1y] == opp) {
-      // 这是对方桥的 carrier1，检查 carrier2 是否空
-      int blockBonus = (state.board[oc2x][oc2y] == 0) ? 35 : 10;
-      score += earlyGame ? (blockBonus * 2 / 3) : blockBonus;
+      int blockBonus = (state.board[oc2x][oc2y] == 0) ? 30 : 5;
+      score += earlyGame ? (blockBonus * 7 / 10) : blockBonus;
+    }
+    int s2x = x - CARRIER2_DX[b], s2y = y - CARRIER2_DY[b];
+    int p2x = s2x + BRIDGE_DX[b], p2y = s2y + BRIDGE_DY[b];
+    int pc1x = s2x + CARRIER1_DX[b], pc1y = s2y + CARRIER1_DY[b];
+    int pc2x = s2x + CARRIER2_DX[b], pc2y = s2y + CARRIER2_DY[b];
+    if (pc2x == x && pc2y == y &&
+        s2x >= 1 && s2x <= SIZE && s2y >= 1 && s2y <= SIZE &&
+        p2x >= 1 && p2x <= SIZE && p2y >= 1 && p2y <= SIZE &&
+        state.board[s2x][s2y] == opp && state.board[p2x][p2y] == opp) {
+      int blockBonus = (state.board[pc1x][pc1y] == 0) ? 30 : 5;
+      score += earlyGame ? (blockBonus * 7 / 10) : blockBonus;
     }
   }
 
-  // ========== 5) 目标轴扩张奖励（MoHex 连接策略）==========
+  
+
+ /*// 4) **开局扩张奖励**：突破当前己方棋子在目标轴上的 min/max 边界
+  //    这是治“被 C2 锁死”的核心。例：先手第一手 C2 (x=2) 后，
+  //    第二手如果走 (x=2..4)，几乎不加扩张分；
+  //    若走 (x=7..9) 这种沿目标方向的“跨棋盘部署”，给高分。
   if (earlyGame && axis.myCount > 0) {
     int a = axis.vertical ? x : y;
-    int span = axis.axisMax - axis.axisMin;
-    
-    // 鼓励突破当前边界
-    if (a < axis.axisMin) score += 15 * (axis.axisMin - a);
-    else if (a > axis.axisMax) score += 15 * (a - axis.axisMax);
-    
-    // 极早期额外奖励大跨度
-    if (veryEarly && span < 3) {
-      if (axis.vertical) {
-        if (x > cx) score += 10;  // 向下扩张
-        else score += 10;          // 向上扩张
-      } else {
-        if (y > cy) score += 10;  // 向右扩张
-        else score += 10;          // 向左扩张
-      }
-    }
-  }
+    if (a < axis.axisMin)
+      score += 12 * (axis.axisMin - a);
+    else if (a > axis.axisMax)
+      score += 12 * (a - axis.axisMax);
+  }*/
 
-  // ========== 6) 边界亲和（中后盘）==========
-  if (!earlyGame) {
-    if (axis.vertical) {
-      if (x<3 || x >= SIZE-1) score += 15;
-    } else {
-      if (y<3 || y >= SIZE-1) score += 15;
-    }
-  }
-
-  // ========== 7) 虚连接奖励（MoHex VC 启发）==========
-  // 如果这手能完成一个虚连接（连接两个己方集团），给予高分
+  // 5) 目标边界亲和：x=1/SIZE 或 y=1/SIZE 给小幅 +6（中后盘有用，开局不太关键）
   if (!veryEarly) {
-    for (int d = 0; d < 6; d++) {
-      int nx = x + dx[d], ny = y + dy[d];
-      if (!state.in_board(nx, ny)) continue;
-      if (state.board[nx][ny] == player) {
-        // 检查是否连接了两个不同的集团
-        // 简化版：假设邻接不同位置可能连接不同集团
-        score += 5;
-      }
+    if (axis.vertical) {
+      if (x == 1 || x == SIZE) score += 12;
+    } else {
+      if (y == 1 || y == SIZE) score += 12;
     }
+  }
+
+  // 6) **先手 (vertical) 开局 y 偏好**：botzone 强制 c2 = board(2,3) 在 y=3 列。
+  //    用户要求：前 3 手尽量落在 botzone y=1..4（即 board y=2..5）以利于
+  //    沿 c 列附近建立 ladder escape 和直走联通。
+  //    权重必须足够大，能压过 x-扩张奖励 (+12×span) 把候选拉去 y=5..6。
+  //    设计：在 board y=2..5 强加成，远离则线性惩罚。
+  if (axis.vertical && earlyGame) {
+    int yFromC2 = abs(y - 3);
+    if      (yFromC2 == 0) score += 35;   // y=3 (c 列)：最高
+    else if (yFromC2 == 1) score += 28;   // y=2 (b 列) / y=4 (d 列)
+    else if (yFromC2 == 2) score += 18;   // y=1 (a 列) / y=5 (e 列)
+    else                   score -= 8 * (yFromC2 - 2);  // 远离 c 列：负惩罚
+  }
+
+  // 7) **后手 (horizontal) 强势开局点**：针对先手强制 c2 = board(2,3) 的应手。
+  //    hex 11x11 理论中，蓝方在 obtuse corner 做 4-4 opening 是公认强势：
+  //      d8 = board(8, 4)  ——  obtuse a11 附近 4-4，主推
+  //      h4 = board(4, 8)  ——  obtuse k1 附近 4-4，主推
+  //    其它备选：acute corner 4-4 (h8 / d4) 和中心 5-5。
+  //    注意要给足分覆盖中心距损失（centerDist ≈ 4 时 -36）。
+  if (!axis.vertical && pieces < 4) {
+    auto isPoint = [&](int X, int Y) { return x == X && y == Y; };
+    if (isPoint(8, 4) || isPoint(4, 8))      score += 80;  // 4-4 obtuse 主推
+    else if (isPoint(8, 8) || isPoint(4, 4)) score += 60;  // acute 4-4 / 长跑线
+    else if (isPoint(8, 5) || isPoint(5, 8) ||
+             isPoint(7, 4) || isPoint(4, 7)) score += 50;  // 4-5 变体
+    else if (isPoint(6, 6))                  score += 25;  // 中心 5-5
   }
 
   return score;
 }
+
+class near {
+  private:
+      HexState* hex_board;
+      const int dx[num_of_near] = {0,-1,-1,0,1,1};
+      const int dy[num_of_near] = {-1,0,1,1,0,-1};
+      const int dx2[num_of_near]={-1,-2,-1,1,2,1};
+      const int dy2[num_of_near]={-1,1,2,1,-1,-2};
+  public:
+      near(HexState* b) {
+          hex_board = b;
+      }
+      // 是否有相邻己方棋子
+      bool neighbour_check(int x, int y, int player) {
+          for (int i = 0; i < num_of_near; i++) {
+              int nx = x + dx[i];
+              int ny = y + dy[i];
+              if (hex_board->board[nx][ny] == player)
+                  return true;
+          }
+          return false;
+      }
+  
+      // Hex经典：双桥结构检测
+      bool double_bridge_fuzzy(int x, int y) {
+          /*
+              桥结构：
+              (x,y) 放下后，如果存在：
+              
+              X . 
+               . X
+  
+              两个点形成“不可同时封堵”的连接
+          */
+          for(int i=0;i<num_of_near;i++){
+              int nx = x + dx2[i];
+              int ny = y + dy2[i];
+              if (nx>=0&&nx<=SIZE+1&&ny>=0&&ny<=SIZE+1&&(hex_board->board[nx][ny] == 1 ||hex_board->board[nx][ny] == -1))return true;
+          }
+          return false;
+      }
+      // 是否靠近已有结构（用于剪枝/MCTS）
+      bool near_any(int x, int y) {
+          for (int i = 0; i < num_of_near; i++) {
+              int nx = x + dx[i];
+              int ny = y + dy[i];
+              if (hex_board->board[nx][ny] == 1 ||
+                  hex_board->board[nx][ny] == -1)
+                  return true;
+          }
+          return false;
+      }
+  };
+  
+// ---------------------------------------------------------------------
+// 开局策略（pieces <= 3 时进入）。
+// 三层逻辑：
+//   1) 后手第一手 vs c2：直接走预置 opening book（hex 11x11 经典强势点）
+//   2) 否则用 candidateScore 全棋盘扫描排序
+//   3) 顶部 K 个候选随机化，让对手不能完全预测
+// ---------------------------------------------------------------------
+class start_first {
+public:
+  HexState *state;
+  start_first(HexState *s) : state(s) {}
+
+  Move getBestMove(int player) {
+    int pieces = 0;
+    for (int i = 1; i <= SIZE; i++)
+      for (int j = 1; j <= SIZE; j++)
+        if (state->board[i][j] != 0) pieces++;
+
+    // === 后手第一手 opening book ===
+    // 当我方是 horizontal player（连左右）且对方刚下 c2 = board(2,3) 时，
+    // 直接从公认强势的 4-4 opening 集合中随机选一个。
+    //   d8 / h4  — obtuse corner 4-4，hex 11x11 最主流
+    //   h8 / d4  — acute corner 4-4，长跑线变体
+    //   e8 / h5  — 4-5 变体，介于 4-4 与中心之间
+    if (pieces == 1 && !isVerticalPlayer(player) &&
+        state->board[2][3] == -player) {
+      static const Move book[] = {
+        {8, 4},   // d8 — obtuse a11 4-4 (最经典)
+        {4, 8},   // h4 — obtuse k1  4-4 (镜像)
+        {8, 8},   // h8 — acute k11 长跑线
+        {4, 4},   // d4 — acute a1  长跑线（镜像）
+        {8, 5},   // e8 — 4-5 obtuse 变体
+        {5, 8},   // h5 — 4-5 obtuse 变体（镜像）
+      };
+      auto &rng = globalRng();
+      return book[rng() % (sizeof(book) / sizeof(book[0]))];
+    }
+
+    // === 一般情况：candidateScore 全棋盘扫描 ===
+    AxisStat axis = computeAxisStat(*state, player);
+
+    struct Scored { int x, y, s; };
+    vector<Scored> scored;
+    scored.reserve(SIZE * SIZE);
+
+    for (int i = 1; i <= SIZE; i++) {
+      for (int j = 1; j <= SIZE; j++) {
+        if (state->board[i][j] != 0) continue;
+        scored.push_back({i, j, candidateScore(*state, i, j, player, pieces, axis)});
+      }
+    }
+    sort(scored.begin(), scored.end(),
+         [](const Scored &a, const Scored &b) { return a.s > b.s; });
+
+    if (scored.empty()) return {SIZE / 2 + 1, SIZE / 2 + 1};
+
+    int K = min(3, (int)scored.size());
+    auto &rng = globalRng();
+    int idx = (int)(rng() % K);
+    return {scored[idx].x, scored[idx].y};
+  }
+};
 
 
 // =====================================================================
@@ -529,6 +662,7 @@ inline Move rolloutBridgeSave(HexState &s, int player, int lastX, int lastY) {
   static const int dy[6] = { 0,  1,-1, 1,-1, 0};
   vector<Move>res;
   Move mv;
+  auto& rng = globalRng();
   for (int d = 0; d < 6; d++) {
     int ax = lastX + dx[d], ay = lastY + dy[d];
     if (ax < 1 || ax > SIZE || ay < 1 || ay > SIZE) continue;
@@ -868,7 +1002,7 @@ vector<Move> generateMoves(HexState &state, int player, int widthCap = 20) {
     while (ql <= qr) {
       int x = qx[ql], y = qy[ql];
       ql++;
-      if (dist[x][y] == limDist) continue;// 达到限制，停止扩散
+      if (dist[x][y] == limDist) break;// 达到限制，停止扩散
       for (int d = 0; d < 6; d++) {
         int nx = x + dx[d], ny = y + dy[d];
         if (nx < 1 || nx > SIZE || ny < 1 || ny > SIZE) continue;
@@ -919,6 +1053,7 @@ public:
   MCTS(HexState *state, int player) {
     rootPlayer = player;
     root = new Node(*state);
+    // root 处给 36 的宽度，让备选更丰富；内部节点默认走 20
     root->untriedMoves = generateMoves(root->state, rootPlayer, 36);
   }
 
@@ -951,7 +1086,8 @@ public:
     double bestRate = -1.0;
     for (auto child : root->children) {
       double rate = (child->visits > 0) ? (child->wins / child->visits) : 0.0;
-      if (rate > bestRate) {
+      if (child->visits > bestVisit ||
+          (child->visits == bestVisit && rate > bestRate)) {
         bestVisit = child->visits;
         bestRate = rate;
         bestChild = child;
