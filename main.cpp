@@ -154,7 +154,7 @@ public:
   //   side = 1 : 己方先手（连上下）
   //   side = 0 : 己方后手（连左右）
   // 返回 false 表示当前回合就是己方的第一手（对方还没下），此时已直接输出落子。
-  inline bool loadFromInput(int n, int& side) {
+  inline bool loadFromInput(int n, int& side,Move& mv) {
     int x, y;
     bool sideKnown = false;
     side = 0;
@@ -174,6 +174,8 @@ public:
     }
 
     cin >> x >> y;
+    mv.x=x;
+    mv.y=y;
     if (!sideKnown) {
       side = (x == -1) ? 1 : 0;
       sideKnown = true;
@@ -314,7 +316,6 @@ inline int candidateScore(HexState &state, int x, int y, int player,
   const bool earlyGame = pieces < 12;   // MoHex: 前12手算开局
   const bool veryEarly = pieces < 6;    // 前6手算极早期
   int score = 0;
-  bool isMyTurnVertical = (win == 1 && player == 1) || (win == 0 && player == -1);
   
   // ========== 1) 中心倾向 ==========
   int centerDist = abs(x - cx) + abs(y - cy);
@@ -345,7 +346,7 @@ inline int candidateScore(HexState &state, int x, int y, int player,
     
     // 完整桥（两个carrier都空）vs 半桥
     int bridgeBonus = (state.board[c1x][c1y] == 0 && state.board[c2x][c2y] == 0) 
-                      ? 32 : 6;
+                      ? 32 : -100;
     score += earlyGame ? (bridgeBonus * 2 / 3) : bridgeBonus;
   }
 
@@ -525,8 +526,8 @@ inline vector<Move> mustRespond(HexState &state, int player) {
 // =====================================================================
 inline Move rolloutBridgeSave(HexState &s, int player, int lastX, int lastY) {
   if (lastX <= 0) return {-1, -1};
-  static const int dx[6] = {-1, -1, 0, 0, 1, 1};
-  static const int dy[6] = { 0,  1,-1, 1,-1, 0};
+  const int dx[6] = {-1, -1, 0, 0, 1, 1};
+  const int dy[6] = { 0,  1,-1, 1,-1, 0};
   vector<Move>res;
   Move mv;
   for (int d = 0; d < 6; d++) {
@@ -557,7 +558,30 @@ inline Move rolloutBridgeSave(HexState &s, int player, int lastX, int lastY) {
 }
   return {-1, -1};
 }
-
+inline Move rolloutBridgeblock(HexState &s, int player, int lastX, int lastY) {
+  if (lastX <= 0) return {-1, -1};
+  vector<Move>res;
+  Move mv;
+  for (int d = 0; d < 6; d++) {
+    int ax = lastX , ay = lastY;
+    for (int b = 0; b < 6; b++) {
+      int bx = ax + BRIDGE_DX[b], by = ay + BRIDGE_DY[b];
+      if (bx < 0 || bx > SIZE+1 || by < 0 || by > SIZE+1) continue;
+      if (s.board[bx][by] != 2&&s.board[bx][by] != -player) continue;
+      int c1x = ax + CARRIER1_DX[b], c1y = ay + CARRIER1_DY[b];
+      int c2x = ax + CARRIER2_DX[b], c2y = ay + CARRIER2_DY[b];
+      if (s.board[c1x][c1y] ==player&& s.board[c2x][c2y] == 0){
+        mv.x=c2x;mv.y=c2y;
+        return mv;
+      }
+      if (s.board[c2x][c2y] == player && s.board[c1x][c1y] == 0){
+        mv.x=c1x;mv.y=c1y;
+        return mv;
+      }
+    }
+  }
+  return {-1, -1};
+}
 class MCTS {
 private:
   struct Node {
@@ -570,10 +594,10 @@ private:
     double wins;
     vector<Move> untriedMoves;
 
-    Node(const HexState &s) {
+    Node(const HexState &s,Move mv) {
       state = s;
       parent = nullptr;
-      move = {-1, -1};
+      move = mv;
       player = 0;
       visits = 0;
       wins = 0.0;
@@ -614,7 +638,7 @@ private:
   Node *select(Node *node) {
     const double C_pw = 1.7;
     while (true) {
-      int allowed = max(2, (int)ceil(C_pw * sqrt((double)node->visits + 1.0)));
+      int allowed = max(2, min((int)ceil(C_pw * sqrt((double)node->visits + 1.0)),100));
       bool canExpand = !node->untriedMoves.empty() &&
                        (int)node->children.size() < allowed;
       if (canExpand || node->children.empty()) return node;
@@ -663,11 +687,17 @@ private:
 
   // 检查并处理桥结构
 // 当新下的棋子形成桥时，立即补上另一个承载点
+/*const int BRIDGE_DX[6] = {-1, -2, -1,  1,  2,  1};
+const int BRIDGE_DY[6] = {-1,  1,  2,  1, -1, -2};
+const int CARRIER1_DX[6] = {-1, -1, 0,  1,  1,  0};
+const int CARRIER1_DY[6] = { 0,  1,  1,  0,  -1, -1};
+const int CARRIER2_DX[6] = { 0, -1,  -1,  0,  1,  1};
+const int CARRIER2_DY[6] = {-1,  0,  1,  1, 0, -1};*/
   void checkAndPlaceBridges(HexState &simState, vector<int> &empties, int posInEmpty[], 
                             int ENC, int x, int y, mt19937 &rng) {
     int player = simState.board[x][y];
     
-    if (x + 1 <= SIZE && y - 2 >= 1 && simState.board[x][y] == simState.board[x + 1][y - 2]) {
+    if((x + 1 <= SIZE && y - 2 >= 1 && simState.board[x][y] == simState.board[x + 1][y - 2])||x+1==SIZE+1||y-2==0) {
       if (simState.board[x + 1][y - 1] == 0 && simState.board[x][y - 1] == 0) {
         if (rng() & 1) {
           placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, player);// 先补承载点1
@@ -679,7 +709,7 @@ private:
       }
     }
     
-    if (x + 1 <= SIZE && y + 1 <= SIZE && simState.board[x][y] == simState.board[x + 1][y + 1]) {
+    if ((x + 1 <= SIZE && y + 1 <= SIZE && simState.board[x][y] == simState.board[x + 1][y + 1])||x+1==SIZE+1||y+1==SIZE+1) {
       if (simState.board[x][y + 1] == 0 && simState.board[x + 1][y] == 0) {
         if (rng() & 1) {
           placeWithBridge(simState, empties, posInEmpty, ENC, x, y + 1, player);
@@ -691,7 +721,7 @@ private:
       }
     }
     
-    if (x + 2 <= SIZE && y - 1 >= 1 && simState.board[x][y] == simState.board[x + 2][y - 1]) {
+    if ((x + 2 <= SIZE && y - 1 >= 1 && simState.board[x][y] == simState.board[x + 2][y - 1])||x+2==SIZE+1||y-1==0) {
       if (simState.board[x + 1][y - 1] == 0 && simState.board[x + 1][y] == 0) {
         if (rng() & 1) {
           placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, player);
@@ -702,7 +732,7 @@ private:
         }
       }
     }
-      if (x-2>=1 && y+1 <= SIZE) {
+      if ((x-2>=1 && y+1 <= SIZE&& simState.board[x][y] == simState.board[x-2][y + 1])||x-2==0||y+1==SIZE+1) {
         if (simState.board[x - 1][y] == 0 && simState.board[x - 1][y + 1] == 0) {
           if (rng() & 1) {
             placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y, player);
@@ -713,7 +743,7 @@ private:
           }
         }
       }
-      if (x-1>=1 && y-1>=1) {
+      if ((x-1>=1 && y-1>=1&& simState.board[x][y] == simState.board[x - 1][y - 1])||x-1==0||y-1==0) {
         if (simState.board[x - 1][y] == 0 && simState.board[x][y-1] == 0) {
           if (rng() & 1) {
             placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y, player);
@@ -725,7 +755,7 @@ private:
         }
       }
     
-      if (x -1>=1 && y+2<=SIZE) {
+      if (x -1>=1 && y+2<=SIZE&& simState.board[x][y] == simState.board[x - 1][y +2]) {
         if (simState.board[x][y + 1] == 0 && simState.board[x - 1][y + 1] == 0) {
           if (rng() & 1) {
             placeWithBridge(simState, empties, posInEmpty, ENC, x, y + 1, player);
@@ -761,8 +791,8 @@ private:
       }
     }
 
-    int lastX = (node == root) ? -1 : node->move.x;
-    int lastY = (node == root) ? -1 : node->move.y;
+    int lastX = node->move.x;
+    int lastY = node->move.y;
 
     mt19937 &rng = globalRng();
     int a = uniform_int_distribution<int>(0, 99)(rng);
@@ -771,6 +801,7 @@ private:
       if (lastX > 0&&a<75) {
         Move bs = rolloutBridgeSave(simState, currentPlayer, lastX, lastY);
         if (bs.x > 0) mv = bs;
+        else mv=rolloutBridgeblock(simState, currentPlayer, lastX, lastY);
       }
       if (mv.x < 0||a>=75) {
         int idx = (int)(rng() % empties.size());
@@ -902,9 +933,9 @@ vector<Move> generateMoves(HexState &state, int player, int widthCap = 20) {
 }
 
 public:
-  MCTS(HexState *state, int player) {
+  MCTS(HexState *state, int player,Move mv) {
     rootPlayer = player;
-    root = new Node(*state);
+    root = new Node(*state,mv);
     root->untriedMoves = generateMoves(root->state, rootPlayer, 36);
   }
 
@@ -931,7 +962,7 @@ public:
       backpropagate(node, winner);
     }
 
-    // Robust max：以访问数为主要标准，胜率作为破平局
+    // Robust max：以准确率为主要标准，胜率作为破平局
     Node *bestChild = nullptr;
     int bestVisit = -1;
     double bestRate = -1.0;
@@ -1102,7 +1133,8 @@ int main() {
 
   int n;
   cin >> n;
-  if (!hex.loadFromInput(n, win)) {
+  Move mv;
+  if (!hex.loadFromInput(n, win,mv)) {
     cout.flush();
     _exit(0);
   }
@@ -1134,7 +1166,7 @@ int main() {
   double remaining = HARD_LIMIT - elapsed-0.05;
 
   double base_budget;
-  if (pieces >= 80)      base_budget = 0.80;
+  if (pieces >= 80)      base_budget = 0.85;
   else if (pieces >= 50) base_budget = 0.85;
   else if (pieces >= 30) base_budget = 0.88;
   else                   base_budget = 0.84;
@@ -1146,7 +1178,7 @@ int main() {
     time_limit = atof(env);
 #endif
 
-  MCTS mcts(&hex, current_player);
+  MCTS mcts(&hex, current_player,mv);
   Move best_move = mcts.search(time_limit);
 
 #ifndef _BOTZONE_ONLINE
