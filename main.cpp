@@ -64,10 +64,10 @@ inline int ufIdx(int player) {
 // =====================================================================
 const int BRIDGE_DX[6] = {-1, -2, -1,  1,  2,  1};
 const int BRIDGE_DY[6] = {-1,  1,  2,  1, -1, -2};
-const int CARRIER1_DX[6] = {-1, -1, -1,  0,  1,  1};
-const int CARRIER1_DY[6] = { 0,  0,  1,  1,  0, -1};
-const int CARRIER2_DX[6] = { 0, -1,  0,  1,  1,  0};
-const int CARRIER2_DY[6] = {-1,  1,  1,  0, -1, -1};
+const int CARRIER1_DX[6] = {-1, -1, 0,  1,  1,  0};
+const int CARRIER1_DY[6] = { 0,  1,  1,  0,  -1, -1};
+const int CARRIER2_DX[6] = { 0, -1,  -1,  0,  1,  1};
+const int CARRIER2_DY[6] = {-1,  0,  1,  1, 0, -1};
 
 // 全局共享随机源（mt19937）—— 避免 rand() 周期短、分布差
 inline mt19937 &globalRng() {
@@ -535,7 +535,7 @@ inline Move rolloutBridgeSave(HexState &s, int player, int lastX, int lastY) {
     if (s.board[ax][ay]!=2&&s.board[ax][ay] != player) continue;
     for (int b = 0; b < 6; b++) {
       int bx = ax + BRIDGE_DX[b], by = ay + BRIDGE_DY[b];
-      if (bx < 0 || bx >= SIZE || by < 0 || by >= SIZE) continue;
+      if (bx < 0 || bx > SIZE+1 || by < 0 || by > SIZE+1) continue;
       if (s.board[bx][by] != 2&&s.board[bx][by] != player) continue;
       int c1x = ax + CARRIER1_DX[b], c1y = ay + CARRIER1_DY[b];
       int c2x = ax + CARRIER2_DX[b], c2y = ay + CARRIER2_DY[b];
@@ -678,7 +678,7 @@ private:
         }
       }
     }
-
+    
     if (x + 1 <= SIZE && y + 1 <= SIZE && simState.board[x][y] == simState.board[x + 1][y + 1]) {
       if (simState.board[x][y + 1] == 0 && simState.board[x + 1][y] == 0) {
         if (rng() & 1) {
@@ -690,7 +690,7 @@ private:
         }
       }
     }
-
+    
     if (x + 2 <= SIZE && y - 1 >= 1 && simState.board[x][y] == simState.board[x + 2][y - 1]) {
       if (simState.board[x + 1][y - 1] == 0 && simState.board[x + 1][y] == 0) {
         if (rng() & 1) {
@@ -702,9 +702,7 @@ private:
         }
       }
     }
-
-    if (player == 1) {
-      if (x == 2 && y < SIZE) {
+      if (x-2>=1 && y+1 <= SIZE) {
         if (simState.board[x - 1][y] == 0 && simState.board[x - 1][y + 1] == 0) {
           if (rng() & 1) {
             placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y, player);
@@ -715,41 +713,29 @@ private:
           }
         }
       }
-      if (x == SIZE - 1 && y > 1) {
-        if (simState.board[x + 1][y - 1] == 0 && simState.board[x + 1][y] == 0) {
+      if (x-1>=1 && y-1>=1) {
+        if (simState.board[x - 1][y] == 0 && simState.board[x][y-1] == 0) {
           if (rng() & 1) {
-            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y, player);
-            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, -player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y, player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x , y - 1, -player);
           } else {
-            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, -player);
-            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y, player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x -1, y, -player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x, y-1, player);
           }
         }
       }
-    } else {
-      if (x < SIZE && y == 2) {
-        if (simState.board[x][y - 1] == 0 && simState.board[x + 1][y - 1] == 0) {
-          if (rng() & 1) {
-            placeWithBridge(simState, empties, posInEmpty, ENC, x, y - 1, player);
-            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, -player);
-          } else {
-            placeWithBridge(simState, empties, posInEmpty, ENC, x + 1, y - 1, -player);
-            placeWithBridge(simState, empties, posInEmpty, ENC, x, y - 1, player);
-          }
-        }
-      }
-      if (x > 1 && y == SIZE - 1) {
+    
+      if (x -1>=1 && y+2<=SIZE) {
         if (simState.board[x][y + 1] == 0 && simState.board[x - 1][y + 1] == 0) {
           if (rng() & 1) {
             placeWithBridge(simState, empties, posInEmpty, ENC, x, y + 1, player);
             placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y + 1, -player);
           } else {
-            placeWithBridge(simState, empties, posInEmpty, ENC, x - 1, y + 1, -player);
-            placeWithBridge(simState, empties, posInEmpty, ENC, x, y + 1, player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x , y + 1, -player);
+            placeWithBridge(simState, empties, posInEmpty, ENC, x-1, y +1, player);
           }
         }
       }
-    }
   }
 
   int simulate(Node *node) {
